@@ -8,14 +8,22 @@ WORKDIR /app
 COPY package.json package-lock.json* bun.lock* ./
 
 # Install dependencies
-# Using npm as primary, but including bun files in copy just in case.
-RUN npm install
+RUN npm ci || npm install
 
 # Copy the rest of the application
 COPY . .
 
+# Define build arguments for Vite
+ARG VITE_SUPABASE_PROJECT_ID
+ARG VITE_SUPABASE_PUBLISHABLE_KEY
+ARG VITE_SUPABASE_URL
+
+# Set environment variables for the build process
+ENV VITE_SUPABASE_PROJECT_ID=$VITE_SUPABASE_PROJECT_ID
+ENV VITE_SUPABASE_PUBLISHABLE_KEY=$VITE_SUPABASE_PUBLISHABLE_KEY
+ENV VITE_SUPABASE_URL=$VITE_SUPABASE_URL
+
 # Build the application
-# We use --frozen-lockfile equivalent if needed, but simple npm build is fine here.
 RUN npm run build
 
 # Step 2: Runtime Stage

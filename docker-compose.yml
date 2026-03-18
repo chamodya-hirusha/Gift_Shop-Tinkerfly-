@@ -1,0 +1,26 @@
+version: '3.8'
+
+services:
+  blossoms-whisper:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        VITE_SUPABASE_PROJECT_ID: ${VITE_SUPABASE_PROJECT_ID}
+        VITE_SUPABASE_PUBLISHABLE_KEY: ${VITE_SUPABASE_PUBLISHABLE_KEY}
+        VITE_SUPABASE_URL: ${VITE_SUPABASE_URL}
+    container_name: blossoms-whisper
+    ports:
+      - "3006:3006"
+    restart: always
+    environment:
+      - NODE_ENV=production
+      - VITE_SUPABASE_PROJECT_ID=${VITE_SUPABASE_PROJECT_ID}
+      - VITE_SUPABASE_PUBLISHABLE_KEY=${VITE_SUPABASE_PUBLISHABLE_KEY}
+      - VITE_SUPABASE_URL=${VITE_SUPABASE_URL}
+    networks:
+      - app-network
+
+networks:
+  app-network:
+    driver: bridge
