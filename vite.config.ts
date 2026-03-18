@@ -6,10 +6,14 @@ import path from "path";
 export default defineConfig(({ mode }) => ({
   server: {
     host: "::",
-    port: 8080,
+    port: 3006,
     hmr: {
       overlay: false,
     },
+  },
+  preview: {
+    port: 3006,
+    strictPort: true,
   },
   plugins: [react()],
   resolve: {
