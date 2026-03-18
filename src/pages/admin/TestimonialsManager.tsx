@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -36,6 +37,7 @@ export default function TestimonialsManager() {
   const [editing, setEditing] = useState<Testimonial | null>(null);
   const [form, setForm] = useState(defaultForm);
   const { toast } = useToast();
+  const queryClient = useQueryClient();
 
   const fetchData = async () => {
     const raw = localStorage.getItem("tinkerfly_testimonials");
@@ -83,6 +85,7 @@ export default function TestimonialsManager() {
     }
     localStorage.setItem("tinkerfly_testimonials", JSON.stringify(currentItems));
     setDialogOpen(false);
+    queryClient.invalidateQueries({ queryKey: ["public-testimonials"] });
     fetchData();
   };
 
@@ -91,12 +94,14 @@ export default function TestimonialsManager() {
     const currentItems = items.filter(i => i.id !== id);
     localStorage.setItem("tinkerfly_testimonials", JSON.stringify(currentItems));
     toast({ title: "Testimonial deleted" });
+    queryClient.invalidateQueries({ queryKey: ["public-testimonials"] });
     fetchData();
   };
 
   const toggleActive = async (t: Testimonial) => {
     const currentItems = items.map(i => i.id === t.id ? { ...i, is_active: !i.is_active } : i);
     localStorage.setItem("tinkerfly_testimonials", JSON.stringify(currentItems));
+    queryClient.invalidateQueries({ queryKey: ["public-testimonials"] });
     fetchData();
   };
 

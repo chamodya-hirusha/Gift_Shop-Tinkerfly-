@@ -4,11 +4,13 @@ import { Button } from "@/components/ui/button";
 import { FolderOpen, Package, Image, Star, MessageSquare, Images, Settings, Download, Upload } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useToast } from "@/hooks/use-toast";
+import { useQueryClient } from "@tanstack/react-query";
 
 export default function DashboardHome() {
   const [stats, setStats] = useState({ categories: 0, products: 0, images: 0, featured: 0, testimonials: 0, gallery: 0 });
   const navigate = useNavigate();
   const { toast } = useToast();
+  const queryClient = useQueryClient();
 
   const loadStats = () => {
     const pStr = localStorage.getItem("tinkerfly_products");
@@ -62,20 +64,52 @@ export default function DashboardHome() {
     reader.onload = (event) => {
       try {
         const data = JSON.parse(event.target?.result as string);
-        if (data.categories) localStorage.setItem("tinkerfly_categories", JSON.stringify(data.categories));
-        if (data.products) localStorage.setItem("tinkerfly_products", JSON.stringify(data.products));
-        if (data.product_images) localStorage.setItem("tinkerfly_product_images", JSON.stringify(data.product_images));
-        if (data.testimonials) localStorage.setItem("tinkerfly_testimonials", JSON.stringify(data.testimonials));
-        if (data.social_gallery) localStorage.setItem("tinkerfly_social_gallery", JSON.stringify(data.social_gallery));
-        if (data.site_settings) localStorage.setItem("tinkerfly_site_settings", JSON.stringify(data.site_settings));
         
-        toast({ title: "Full data import successful!" });
+        const entities = [
+          { key: "categories", storage: "tinkerfly_categories" },
+          { key: "products", storage: "tinkerfly_products" },
+          { key: "product_images", storage: "tinkerfly_product_images", altKey: "productImages" },
+          { key: "testimonials", storage: "tinkerfly_testimonials" },
+          { key: "social_gallery", storage: "tinkerfly_social_gallery" },
+          { key: "site_settings", storage: "tinkerfly_site_settings" }
+        ];
+
+        entities.forEach(entity => {
+          const newData = data[entity.key] || (entity.altKey ? data[entity.altKey] : null);
+          if (newData) {
+            if (entity.key === "site_settings") {
+              // Settings are usually just one object, so we merge properties
+              const current = JSON.parse(localStorage.getItem(entity.storage) || "{}");
+              localStorage.setItem(entity.storage, JSON.stringify({ ...current, ...newData }));
+            } else if (Array.isArray(newData)) {
+              // Arrays (products, categories, etc.) are merged by ID
+              const current = JSON.parse(localStorage.getItem(entity.storage) || "[]");
+              const merged = [...current];
+              newData.forEach((item: any) => {
+                const idx = merged.findIndex((existing: any) => existing.id === item.id);
+                if (idx > -1) merged[idx] = item;
+                else merged.push(item);
+              });
+              localStorage.setItem(entity.storage, JSON.stringify(merged));
+            }
+          }
+        });
+        
+        toast({ title: "Full data import and merge successful!" });
+        
+        // Refresh all global queries
+        queryClient.invalidateQueries({ queryKey: ["public-categories"] });
+        queryClient.invalidateQueries({ queryKey: ["popular-products"] });
+        queryClient.invalidateQueries({ queryKey: ["nav-categories"] });
+        queryClient.invalidateQueries({ queryKey: ["site-settings"] });
+        
         loadStats();
       } catch (err: any) {
         toast({ title: "Failed to parse JSON", description: err.message, variant: "destructive" });
       }
     };
     reader.readAsText(file);
+    e.target.value = "";
   };
 
   const cards = [

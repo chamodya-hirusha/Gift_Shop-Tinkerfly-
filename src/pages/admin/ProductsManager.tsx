@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -45,22 +46,30 @@ export default function ProductsManager() {
   const [uploading, setUploading] = useState(false);
   const [pendingImages, setPendingImages] = useState<string[]>([]);
   const { toast } = useToast();
+  const queryClient = useQueryClient();
 
   const fetchData = async () => {
-    // Read from localStorage json data instead of Supabase
     const pStr = localStorage.getItem("tinkerfly_products");
     const cStr = localStorage.getItem("tinkerfly_categories");
     const iStr = localStorage.getItem("tinkerfly_product_images");
 
-    const p = pStr ? JSON.parse(pStr) : [];
+    let p = pStr ? JSON.parse(pStr) : [];
     let c = cStr ? JSON.parse(cStr) : [];
     const i = iStr ? JSON.parse(iStr) : [];
 
-    // Bootstrap a default category if empty so we can create products without Supabase
+    // Bootstrap a default category if empty
     if (c.length === 0) {
       c = [{ id: "cat-1", name: "Default Category", sort_order: 0 }];
       localStorage.setItem("tinkerfly_categories", JSON.stringify(c));
     }
+
+    // Sort by created_at (most recent first) or by ID if timestamp missing
+    p.sort((a: any, b: any) => {
+      const dateA = a.created_at || "";
+      const dateB = b.created_at || "";
+      if (dateA && dateB) return dateB.localeCompare(dateA);
+      return b.id.localeCompare(a.id); // Fallback to ID sorting
+    });
 
     setProducts(p);
     setCategories(c);
@@ -129,9 +138,17 @@ export default function ProductsManager() {
   };
 
   const handleSave = async () => {
+    // Ensure category_id is set if missing (fallback to first category)
+    const finalCategoryId = form.category_id || categories[0]?.id || "";
+    
+    if (!finalCategoryId) {
+      toast({ title: "Error", description: "You must create at least one category first.", variant: "destructive" });
+      return;
+    }
+
     const payload = {
       name: form.name, description: form.description || null, price: form.price,
-      category_id: form.category_id, badge: form.badge === "none" ? null : form.badge,
+      category_id: finalCategoryId, badge: form.badge === "none" ? null : form.badge,
       is_featured: form.is_featured, is_active: form.is_active,
       customizable: form.customizable, sort_order: form.sort_order,
     };
@@ -146,7 +163,11 @@ export default function ProductsManager() {
       }
     } else {
       productId = "prod-" + Date.now();
-      currentProds.push({ id: productId, ...payload } as any);
+      currentProds.unshift({ 
+        id: productId, 
+        ...payload, 
+        created_at: new Date().toISOString() 
+      } as any);
     }
 
     // Save to JSON storage
@@ -174,6 +195,14 @@ export default function ProductsManager() {
 
     toast({ title: editing ? "Product updated" : "Product created" });
     setDialogOpen(false);
+    setForm(defaultForm);
+    setPendingImages([]);
+    
+    // Invalidate queries to refresh the home page and other global states
+    queryClient.invalidateQueries({ queryKey: ["public-categories"] });
+    queryClient.invalidateQueries({ queryKey: ["popular-products"] });
+    queryClient.invalidateQueries({ queryKey: ["nav-categories"] });
+    
     fetchData(); // This will refresh the state from localStorage
   };
 
@@ -215,17 +244,56 @@ export default function ProductsManager() {
     const reader = new FileReader();
     reader.onload = (event) => {
       try {
-        const data = JSON.parse(event.target?.result as string);
-        if (data.products) localStorage.setItem("tinkerfly_products", JSON.stringify(data.products));
-        if (data.categories) localStorage.setItem("tinkerfly_categories", JSON.stringify(data.categories));
-        if (data.productImages) localStorage.setItem("tinkerfly_product_images", JSON.stringify(data.productImages));
-        toast({ title: "JSON data imported successfully!" });
+        const importedData = JSON.parse(event.target?.result as string);
+        
+        // Handle both { products: [] } and raw [{}, {}] formats
+        const newProducts = importedData.products || (Array.isArray(importedData) ? importedData : null);
+        const newCategories = importedData.categories || null;
+        const newImages = importedData.productImages || importedData.product_images || null;
+
+        if (newProducts) {
+          const current = JSON.parse(localStorage.getItem("tinkerfly_products") || "[]");
+          // Merge and avoid duplicates by ID if present
+          const merged = [...current];
+          newProducts.forEach((p: any) => {
+            const idx = merged.findIndex(existing => existing.id === p.id);
+            if (idx > -1) merged[idx] = p;
+            else merged.push(p);
+          });
+          localStorage.setItem("tinkerfly_products", JSON.stringify(merged));
+        }
+
+        if (newCategories) {
+          const current = JSON.parse(localStorage.getItem("tinkerfly_categories") || "[]");
+          const merged = [...current];
+          newCategories.forEach((c: any) => {
+            const idx = merged.findIndex(existing => existing.id === c.id);
+            if (idx > -1) merged[idx] = c;
+            else merged.push(c);
+          });
+          localStorage.setItem("tinkerfly_categories", JSON.stringify(merged));
+        }
+
+        if (newImages) {
+          const current = JSON.parse(localStorage.getItem("tinkerfly_product_images") || "[]");
+          const merged = [...current];
+          newImages.forEach((img: any) => {
+            const idx = merged.findIndex(existing => existing.id === img.id);
+            if (idx > -1) merged[idx] = img;
+            else merged.push(img);
+          });
+          localStorage.setItem("tinkerfly_product_images", JSON.stringify(merged));
+        }
+
+        toast({ title: "JSON data imported and merged successfully!" });
         fetchData();
       } catch (err: any) {
         toast({ title: "Failed to parse JSON", description: err.message, variant: "destructive" });
       }
     };
     reader.readAsText(file);
+    // Reset input value so same file can be imported again if needed
+    e.target.value = "";
   };
 
 
@@ -284,18 +352,24 @@ export default function ProductsManager() {
                 </div>
                 <div className="space-y-2">
                   <Label>Badge</Label>
-                  <Select value={form.badge} onValueChange={(v) => setForm(f => ({ ...f, badge: v }))}>
-                    <SelectTrigger><SelectValue placeholder="Select or type..." /></SelectTrigger>
+                  <Select 
+                    value={BADGE_OPTIONS.some(opt => opt.value === form.badge) ? form.badge : "custom"} 
+                    onValueChange={(v) => setForm(f => ({ ...f, badge: v === "custom" ? "" : v }))}
+                  >
+                    <SelectTrigger><SelectValue placeholder="Select a badge..." /></SelectTrigger>
                     <SelectContent>
                       {BADGE_OPTIONS.map((b) => <SelectItem key={b.value} value={b.value}>{b.label}</SelectItem>)}
+                      <SelectItem value="custom">Custom Badge...</SelectItem>
                     </SelectContent>
                   </Select>
-                  <Input 
-                    placeholder="Or type a custom badge..." 
-                    value={form.badge === "none" ? "" : form.badge} 
-                    onChange={(e) => setForm(f => ({ ...f, badge: e.target.value || "none" }))} 
-                    className="mt-2 text-sm"
-                  />
+                  {(!BADGE_OPTIONS.some(opt => opt.value === form.badge) || form.badge === "") && form.badge !== "none" && (
+                    <Input 
+                      placeholder="Type custom badge..." 
+                      value={form.badge === "none" ? "" : form.badge} 
+                      onChange={(e) => setForm(f => ({ ...f, badge: e.target.value || "none" }))} 
+                      className="mt-2 text-sm animate-in fade-in slide-in-from-top-1"
+                    />
+                  )}
                 </div>
               </div>
 
@@ -335,7 +409,7 @@ export default function ProductsManager() {
                   <Label>Customizable</Label>
                 </div>
               </div>
-              <Button onClick={handleSave} className="w-full" disabled={!form.name || !form.category_id}>
+              <Button onClick={handleSave} className="w-full" disabled={!form.name}>
                 {editing ? "Update Product" : "Create Product"}
               </Button>
             </div>

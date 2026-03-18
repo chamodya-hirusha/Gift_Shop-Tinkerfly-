@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -34,6 +35,7 @@ export default function SocialGalleryManager() {
   const [form, setForm] = useState(defaultForm);
   const [uploading, setUploading] = useState(false);
   const { toast } = useToast();
+  const queryClient = useQueryClient();
 
   const fetchData = async () => {
     const raw = localStorage.getItem("tinkerfly_social_gallery");
@@ -105,6 +107,7 @@ export default function SocialGalleryManager() {
 
     localStorage.setItem("tinkerfly_social_gallery", JSON.stringify(currentItems));
     setDialogOpen(false);
+    queryClient.invalidateQueries({ queryKey: ["public-gallery"] });
     fetchData();
   };
 
@@ -113,12 +116,14 @@ export default function SocialGalleryManager() {
     const currentItems = items.filter(i => i.id !== id);
     localStorage.setItem("tinkerfly_social_gallery", JSON.stringify(currentItems));
     toast({ title: "Gallery item deleted" });
+    queryClient.invalidateQueries({ queryKey: ["public-gallery"] });
     fetchData();
   };
 
   const toggleActive = async (g: GalleryItem) => {
     const currentItems = items.map(i => i.id === g.id ? { ...i, is_active: !i.is_active } : i);
     localStorage.setItem("tinkerfly_social_gallery", JSON.stringify(currentItems));
+    queryClient.invalidateQueries({ queryKey: ["public-gallery"] });
     fetchData();
   };
 

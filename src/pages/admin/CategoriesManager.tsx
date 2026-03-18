@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -22,6 +23,7 @@ export default function CategoriesManager() {
   const [form, setForm] = useState({ name: "", description: "", sort_order: 0, is_active: true, cover_image: "" });
   const [uploading, setUploading] = useState(false);
   const { toast } = useToast();
+  const queryClient = useQueryClient();
 
   const fetchCategories = async () => {
     const raw = localStorage.getItem("tinkerfly_categories");
@@ -92,7 +94,13 @@ export default function CategoriesManager() {
     }
 
     localStorage.setItem("tinkerfly_categories", JSON.stringify(currentCats));
+    toast({ title: editing ? "Category updated" : "Category created" });
     setDialogOpen(false);
+    
+    // Refresh UI
+    queryClient.invalidateQueries({ queryKey: ["nav-categories"] });
+    queryClient.invalidateQueries({ queryKey: ["public-categories"] });
+    
     fetchCategories();
   };
 
@@ -101,6 +109,8 @@ export default function CategoriesManager() {
     const currentCats = categories.filter(c => c.id !== id);
     localStorage.setItem("tinkerfly_categories", JSON.stringify(currentCats));
     toast({ title: "Category deleted" });
+    queryClient.invalidateQueries({ queryKey: ["nav-categories"] });
+    queryClient.invalidateQueries({ queryKey: ["public-categories"] });
     fetchCategories();
   };
 
